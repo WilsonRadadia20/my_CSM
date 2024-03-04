@@ -13,22 +13,20 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type githubFetchedValues struct {
-	githubTagVersion  string
-	githubImageValue  string
-	githubShaValue    string
+type values struct {
+	tagVersion string
+	image      string
+	digests    string
+}
+
+type githubValues struct {
+	fetchedData       values
 	githubFetchedData string
 }
 
-type redhatFetchedValues struct {
-	redhatTagVersion string
-	redhatImageValue string
-	redhatShaValue   string
-}
-
 type fetchedValues struct {
-	githubFetchedValues
-	redhatFetchedValues
+	githubValues
+	redhatValues values
 }
 
 type githubAuth struct {
@@ -39,10 +37,19 @@ type githubAuth struct {
 	githubBranch string
 }
 
-func compareFetchedValues(fetchedValues fetchedValues) (comparisionResult bool) {
+var expressionjs = `(function(){
+	const pfetagpanel = document.querySelectorAll('dl pfe-tag-panel');
+	if(pfetagpanel.length>=3){
+		return pfetagpanel[2].textContent;
+	}
+	return null;
+	})();
+`
+
+func compareFetchedValues(fetchedValuesInstance fetchedValues) (comparisionResult bool) {
 
 	//Trimming to exclude blank spaces
-	if strings.TrimSpace(fetchedValues.redhatTagVersion) == strings.TrimSpace(fetchedValues.githubTagVersion) && strings.TrimSpace(fetchedValues.redhatImageValue) == strings.TrimSpace(fetchedValues.githubImageValue) && strings.TrimSpace(fetchedValues.redhatShaValue) == strings.TrimSpace(fetchedValues.githubShaValue) {
+	if strings.TrimSpace(fetchedValuesInstance.redhatValues.tagVersion) == strings.TrimSpace(fetchedValuesInstance.githubValues.fetchedData.tagVersion) && strings.TrimSpace(fetchedValuesInstance.redhatValues.image) == strings.TrimSpace(fetchedValuesInstance.githubValues.fetchedData.image) && strings.TrimSpace(fetchedValuesInstance.redhatValues.digests) == strings.TrimSpace(fetchedValuesInstance.githubValues.fetchedData.digests) {
 		return true
 	} else {
 		return false
@@ -54,16 +61,16 @@ func updateWords(mainString string, oldSubString string, newSubString string) (r
 	return
 }
 
-func updateContent(fetchedValues fetchedValues) (newString string) {
+func updateContent(fetchedValuesInstance fetchedValues) (newString string) {
 	// Testing data:
-	// images1 := "56b9f97db7e4bede96526c22\n"
-	// tags := "9.3-11\n"
-	// sha := "b88902acf3073b61cb407e86395935b7bac5b93b16071d2b40b9fb485db2135d"
+	// images1 := "https://catalog.redhat.com/software/containers/ubi9/ubi-micro/615bdf943f6014fa45ae1b58?architecture=amd64&image=56b9f97db7e4bede96526c22\n"
+	// tags := "ubi9/ubi-micro 9.3-15\n"
+	// sha := "registry.access.redhat.com/ubi9/ubi-micro@sha256:b88902acf3073b61cb407e86395935b7bac5b93b16071d2b40b9fb485db2135d"
 
 	// \n so that the empty space remains as it is
-	newString = updateWords(fetchedValues.githubFetchedData, fetchedValues.githubImageValue, "56b9f97db7e4bede96526c22 "+"\n")
-	newString = updateWords(newString, fetchedValues.githubTagVersion, "9.3-12"+"\n")
-	newString = updateWords(newString, fetchedValues.githubShaValue, "b88902acf3073b61cb407e86395935b7bac5b93b16071d2b40b9fb485db2135d")
+	newString = updateWords(newString, fetchedValuesInstance.githubValues.fetchedData.tagVersion, fetchedValuesInstance.redhatValues.tagVersion+"\n") //fetchedValuesInstance.redhatValues.tagVersion
+	newString = updateWords(fetchedValuesInstance.githubFetchedData, fetchedValuesInstance.githubValues.fetchedData.image, fetchedValuesInstance.redhatValues.image+"\n")
+	newString = updateWords(newString, fetchedValuesInstance.githubValues.fetchedData.digests, fetchedValuesInstance.redhatValues.digests)
 
 	return newString
 }
@@ -82,6 +89,7 @@ func fetchDataRedhat(redhatUrl string) (tagVersion string, imageValue string, sh
 	//Scraping Logic
 	var url string
 	var manifestList string
+	var repository string
 
 	err := chromedp.Run(ctx,
 		//Navigating to the website
@@ -93,14 +101,17 @@ func fetchDataRedhat(redhatUrl string) (tagVersion string, imageValue string, sh
 		//Retrieving the value of Tag
 		chromedp.Text(`main span.eco-static-tag span.eco-static-tag__name`, &tagVersion, chromedp.NodeVisible, chromedp.ByQuery),
 
+		//Retrieving repository
+		chromedp.Text(`main div.eco-container-repo--registry`, &repository, chromedp.NodeVisible, chromedp.ByQuery),
+
 		//Retrieving the image
-		//chromedp.Sleep(5*time.Second), //The image is in website's url so to get image website must be loaded completely.
+		chromedp.Sleep(5*time.Second), //The image is in website's url so to get image website must be loaded completely.
 		chromedp.Location(&url),
 
 		//Retrieving the sha value main div.pf-c-description-list__group dd.pf-c-description-list__description div.pf-c-clipboard-copy__group input#text-input-45
 		chromedp.Evaluate(`document.querySelectorAll("main span.pf-c-tabs__item-text")[document.querySelectorAll("main span.pf-c-tabs__item-text").length - 1].click();`, nil),
-		chromedp.Sleep(5*time.Second), //For loading the website after the button[Get this image] is clicked
-		chromedp.Evaluate(`document.querySelector("input.pf-c-form-control").value;`, &manifestList),
+		// chromedp.Sleep(5*time.Second), //For loading the website after the button[Get this image] is clicked
+		chromedp.Evaluate(`document.querySelectorAll("input.pf-c-form-control")[4].value;`, &manifestList),
 	)
 
 	//Error handling
@@ -109,11 +120,14 @@ func fetchDataRedhat(redhatUrl string) (tagVersion string, imageValue string, sh
 		return "", "", ""
 	}
 
-	//Splittion to get image and sha
-	imageValueArr := strings.Split(url, "image=")
-	shaValueArr := strings.Split(manifestList, "sha256:")
+	//Splitting to get image and sha
+	// imageValueArr := strings.Split(url, "image=")
+	// shaValueArr := strings.Split(manifestList, "sha256:")
 
-	return tagVersion, imageValueArr[1], shaValueArr[1]
+	// return tagVersion, imageValueArr[1], shaValueArr[1]
+	tagVersion = repository + " " + tagVersion
+
+	return tagVersion, url, manifestList
 
 }
 
@@ -139,19 +153,19 @@ func fetchDataGithub(gitUrl string) (gitTagVersion string, gitImage string, gitS
 	}
 
 	//Extracting tag version
-	startIndexTag := strings.Index(gitFetchedData, "ubi-micro ")
+	startIndexTag := strings.Index(gitFetchedData, "# Version: ")
 	endIndexTag := strings.Index(gitFetchedData, "DEFAULT_BASEIMAGE=")
-	gitTagVersion = gitFetchedData[startIndexTag+10 : endIndexTag] //+10 to exclude ubi-micro(10 char)
+	gitTagVersion = gitFetchedData[startIndexTag+11 : endIndexTag] //+10 to exclude ubi-micro(10 char)
 
 	//Extracting image value
-	startIndexImage := strings.Index(gitFetchedData, "image=")
+	startIndexImage := strings.Index(gitFetchedData, "# URL: ")
 	endIndexImage := strings.Index(gitFetchedData, "# Version:")
-	gitImage = gitFetchedData[startIndexImage+6 : endIndexImage] //+6 to exclude image=(6 char)
+	gitImage = gitFetchedData[startIndexImage+7 : endIndexImage] //+6 to exclude image=(6 char)
 
 	//Extracting sha value
-	startIndexSha := strings.Index(gitFetchedData, "sha256:")
+	startIndexSha := strings.Index(gitFetchedData, "DEFAULT_BASEIMAGE=\"")
 	endIndexSha := strings.Index(gitFetchedData, "DEFAULT_GOIMAGE")
-	gitShaValue = gitFetchedData[startIndexSha+7 : endIndexSha-2] //+7 to exclude sha256:(7 char) and -2 to exclude _"(2 char)
+	gitShaValue = gitFetchedData[startIndexSha+19 : endIndexSha-2] //+7 to exclude sha256:(7 char) and -2 to exclude _"(2 char)
 
 	return gitTagVersion, gitImage, gitShaValue, gitFetchedData
 
@@ -242,50 +256,58 @@ func main() {
 	redhatUrl := `https://catalog.redhat.com/software/containers/ubi9/ubi-micro/615bdf943f6014fa45ae1b58?architecture=amd64`
 	gitUrl := `https://github.com/WilsonRadadia20/my_CSM/blob/main/csm-main/config/csm-common.mk`
 
-	// var githubAuth = githubAuth{"WilsonRadadia20", "my_CSM", "csm-main/config/csm-common.mk", "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", "User_branch_1"}
+	var githubAuth = githubAuth{"WilsonRadadia20", "my_CSM", "csm-main/config/csm-common.mk", "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", "User_branch_1"}
 
 	tagVersion, imageValue, shaValue := fetchDataRedhat(redhatUrl)
 	gitTagVersion, gitImageValue, gitShaValue, gitFetchedData := fetchDataGithub(gitUrl)
 
-	var fetchedValues = fetchedValues{
-		githubFetchedValues: githubFetchedValues{gitTagVersion, gitImageValue, gitShaValue, gitFetchedData},
-		redhatFetchedValues: redhatFetchedValues{tagVersion, imageValue, shaValue}}
+	redhatDataInstance := values{tagVersion, imageValue, shaValue}
 
-	//Error handling if the data is not retrieved //
-	if fetchedValues.redhatTagVersion == "" && fetchedValues.redhatImageValue == "" && fetchedValues.redhatShaValue == "" {
-		// fmt.Println("Nothing Fetched!!!")
+	githubValuesInstance := githubValues{
+		fetchedData:       values{gitTagVersion, gitImageValue, gitShaValue},
+		githubFetchedData: gitFetchedData,
+	}
+
+	fetchedValuesInstance := fetchedValues{
+		githubValues: githubValuesInstance,
+		redhatValues: redhatDataInstance,
+	}
+
+	//Error handling if the data is not retrieved
+	if fetchedValuesInstance.redhatValues.tagVersion == "" || fetchedValuesInstance.redhatValues.image == "" || fetchedValuesInstance.redhatValues.digests == "" {
+		fmt.Println("Nothing Fetched!!!")
 		return
-	} else if fetchedValues.githubTagVersion == "" && fetchedValues.githubImageValue == "" && fetchedValues.githubShaValue == "" {
-		// fmt.Println("Nothing Fetched!!!")
+	} else if fetchedValuesInstance.githubValues.fetchedData.tagVersion == "" || fetchedValuesInstance.githubValues.fetchedData.image == "" || fetchedValuesInstance.fetchedData.digests == "" {
+		fmt.Println("Nothing Fetched!!!")
 		return
 	}
 
 	//Printing the retrieved data
 	fmt.Println("The data retrieved from Red Hat Catalog")
-	fmt.Println("The latest tag version is:", fetchedValues.redhatTagVersion)
-	fmt.Println("The image value is:", fetchedValues.redhatImageValue)
-	fmt.Println("The sha value is:", fetchedValues.redhatShaValue)
+	fmt.Println("The latest tag version is:", fetchedValuesInstance.redhatValues.tagVersion)
+	fmt.Println("The image value is:", fetchedValuesInstance.redhatValues.image)
+	fmt.Println("The sha value is:", fetchedValuesInstance.redhatValues.digests)
 
-	fmt.Println("\nThe data retrieved from github repo")
-	fmt.Print("The latest tag version is: ", fetchedValues.githubTagVersion)
-	fmt.Print("The image value is: ", fetchedValues.githubImageValue)
-	fmt.Print("The sha value is: ", fetchedValues.githubShaValue)
+	fmt.Println("\nThe data retrieved from Github Repo")
+	fmt.Print("The latest tag version is: ", fetchedValuesInstance.githubValues.fetchedData.tagVersion)
+	fmt.Print("The image value is: ", fetchedValuesInstance.githubValues.fetchedData.image)
+	fmt.Print("The sha value is: ", fetchedValuesInstance.githubValues.fetchedData.digests)
 
-	comparisionResult := compareFetchedValues(fetchedValues)
+	comparisionResult := compareFetchedValues(fetchedValuesInstance)
 
 	if comparisionResult {
 		fmt.Println("\nNothing to be changed")
 	} else {
 
 		fmt.Println("\nThere is new update\n\n")
-		contentAfterChanges := updateContent(fetchedValues)
+		contentAfterChanges := updateContent(fetchedValuesInstance)
 		fmt.Println(contentAfterChanges)
 
 		//Git Push in branch
-		// githubPush(contentAfterChanges, githubAuth)
+		githubPush(contentAfterChanges, githubAuth)
 
 		//Git PR
-		// githubPullRequest(contentAfterChanges, githubAuth)
+		githubPullRequest(contentAfterChanges, githubAuth)
 	}
 
 }
