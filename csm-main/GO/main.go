@@ -68,8 +68,8 @@ func updateContent(fetchedValuesInstance fetchedValues) (newString string) {
 	// sha := "registry.access.redhat.com/ubi9/ubi-micro@sha256:b88902acf3073b61cb407e86395935b7bac5b93b16071d2b40b9fb485db2135d"
 
 	// \n so that the empty space remains as it is
-	newString = updateWords(newString, fetchedValuesInstance.githubValues.fetchedData.tagVersion, fetchedValuesInstance.redhatValues.tagVersion+"\n") //fetchedValuesInstance.redhatValues.tagVersion
-	newString = updateWords(fetchedValuesInstance.githubFetchedData, fetchedValuesInstance.githubValues.fetchedData.image, fetchedValuesInstance.redhatValues.image+"\n")
+	newString = updateWords(fetchedValuesInstance.githubFetchedData, fetchedValuesInstance.githubValues.fetchedData.tagVersion, fetchedValuesInstance.redhatValues.tagVersion+"\n") //fetchedValuesInstance.redhatValues.tagVersion
+	newString = updateWords(newString, fetchedValuesInstance.githubValues.fetchedData.image, fetchedValuesInstance.redhatValues.image+"\n")
 	newString = updateWords(newString, fetchedValuesInstance.githubValues.fetchedData.digests, fetchedValuesInstance.redhatValues.digests)
 
 	return newString
@@ -256,7 +256,7 @@ func main() {
 	redhatUrl := `https://catalog.redhat.com/software/containers/ubi9/ubi-micro/615bdf943f6014fa45ae1b58?architecture=amd64`
 	gitUrl := `https://github.com/WilsonRadadia20/my_CSM/blob/main/csm-main/config/csm-common.mk`
 
-	var githubAuth = githubAuth{"WilsonRadadia20", "my_CSM", "csm-main/config/csm-common.mk", "xxxxxxxxxxxxxxxxxxxxxxxxxx", "User_branch_1"}
+	var githubAuth = githubAuth{"WilsonRadadia20", "my_CSM", "csm-main/config/csm-common.mk", "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", "User_branch_1"} //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
 
 	tagVersion, imageValue, shaValue := fetchDataRedhat(redhatUrl)
 	gitTagVersion, gitImageValue, gitShaValue, gitFetchedData := fetchDataGithub(gitUrl)
