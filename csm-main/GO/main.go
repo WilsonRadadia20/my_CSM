@@ -256,7 +256,7 @@ func main() {
 	redhatUrl := `https://catalog.redhat.com/software/containers/ubi9/ubi-micro/615bdf943f6014fa45ae1b58?architecture=amd64`
 	gitUrl := `https://github.com/WilsonRadadia20/my_CSM/blob/main/csm-main/config/csm-common.mk`
 
-	var githubAuth = githubAuth{"WilsonRadadia20", "my_CSM", "csm-main/config/csm-common.mk", "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", "User_branch_1"} //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
+	var githubAuth = githubAuth{"WilsonRadadia20", "my_CSM", "csm-main/config/csm-common.mk", "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", "User_branch_1"}
 
 	tagVersion, imageValue, shaValue := fetchDataRedhat(redhatUrl)
 	gitTagVersion, gitImageValue, gitShaValue, gitFetchedData := fetchDataGithub(gitUrl)
