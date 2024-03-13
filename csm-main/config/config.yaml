@@ -1,0 +1,10 @@
+urls:
+  redhatUrl: https://catalog.redhat.com/software/containers/ubi9/ubi-micro/615bdf943f6014fa45ae1b58?architecture=amd64
+  githubUrl: https://github.com/WilsonRadadia20/my_CSM/blob/main/csm-main/config/csm-common.mk
+
+githubAuth:
+  owner: WilsonRadadia20
+  repo: my_CSM
+  token: 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
+  path: csm-main/config/csm-common.mk
+  branch: User_branch_1
