@@ -90,14 +90,16 @@ func readConfigYaml(config ConfigData) ConfigData {
 	yamlFile, err := ioutil.ReadFile("config/config.yaml")
 
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("Error reading the yaml file", err)
+		log.Fatal("Error reading the yaml file", err)
 	}
 
 	//Decoding data
 	//Unmarshal: First parameter is byte slice and second parameter is pointer to struct
-	err1 := yaml.Unmarshal(yamlFile, &config)
-	if err1 != nil {
-		log.Fatal(err)
+	errors := yaml.Unmarshal(yamlFile, &config)
+	if errors != nil {
+		fmt.Println("Error reading the yaml file", errors)
+		log.Fatal("Error reading the yaml file", errors)
 	}
 
 	return config
@@ -145,6 +147,7 @@ func fetchDataRedhat(redhatUrl string) (tagVersion string, imageValue string, sh
 	//Error handling
 	if err != nil {
 		fmt.Println("Failed to retrieve the redhat values: ", err)
+		log.Fatal("Failed to retrieve the redhat values: ", err)
 		return "", "", ""
 	}
 
@@ -172,6 +175,7 @@ func fetchDataGithub(gitUrl string) (gitTagVersion string, gitImage string, gitS
 	//Error handling
 	if errors != nil {
 		fmt.Println("Failed to retrieve the github values: ", errors)
+		log.Fatal("Failed to retrieve the redhat values: ", errors)
 		return "", "", "", ""
 	}
 
@@ -260,7 +264,7 @@ func main() {
 		//Git Push in branch
 		githubAuth.GithubPush(data)
 
-		// Git PR
+		//Git PR
 		githubAuth.GithubPullRequest(data)
 	}
 
