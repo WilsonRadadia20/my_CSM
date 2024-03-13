@@ -1,16 +1,16 @@
 package main
 
 import (
+	L "GO/githubActions"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/google/go-github/v59/github"
-	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 )
 
 type values struct {
@@ -37,14 +37,23 @@ type githubAuth struct {
 	githubBranch string
 }
 
-var expressionjs = `(function(){
-	const pfetagpanel = document.querySelectorAll('dl pfe-tag-panel');
-	if(pfetagpanel.length>=3){
-		return pfetagpanel[2].textContent;
-	}
-	return null;
-	})();
-`
+type ConfigData struct {
+	Urls     ConfigUrls       `yaml:"urls"`
+	AuthData ConfigGithubAuth `yaml:"githubAuth"`
+}
+
+type ConfigUrls struct {
+	RedhatUrl string `yaml:"redhatUrl"`
+	GithubUrl string `yaml:"githubUrl"`
+}
+
+type ConfigGithubAuth struct {
+	Owner  string `yaml:"owner"`
+	Repo   string `yaml:"repo"`
+	Token  string `yaml:"token"`
+	Path   string `yaml:"path"`
+	Branch string `yaml:"branch"`
+}
 
 func compareFetchedValues(fetchedValuesInstance fetchedValues) (comparisionResult bool) {
 
@@ -73,6 +82,27 @@ func updateContent(fetchedValuesInstance fetchedValues) (newString string) {
 	newString = updateWords(newString, fetchedValuesInstance.githubValues.fetchedData.digests, fetchedValuesInstance.redhatValues.digests)
 
 	return newString
+}
+
+func readConfigYaml(config ConfigData) ConfigData {
+
+	//Reading file
+	yamlFile, err := ioutil.ReadFile("config/config.yaml")
+
+	if err != nil {
+		fmt.Println("Error reading the yaml file", err)
+		log.Fatal("Error reading the yaml file", err)
+	}
+
+	//Decoding data
+	//Unmarshal: First parameter is byte slice and second parameter is pointer to struct
+	errors := yaml.Unmarshal(yamlFile, &config)
+	if errors != nil {
+		fmt.Println("Error reading the yaml file", errors)
+		log.Fatal("Error reading the yaml file", errors)
+	}
+
+	return config
 }
 
 func fetchDataRedhat(redhatUrl string) (tagVersion string, imageValue string, shaValue string) {
@@ -117,14 +147,10 @@ func fetchDataRedhat(redhatUrl string) (tagVersion string, imageValue string, sh
 	//Error handling
 	if err != nil {
 		fmt.Println("Failed to retrieve the redhat values: ", err)
+		log.Fatal("Failed to retrieve the redhat values: ", err)
 		return "", "", ""
 	}
 
-	//Splitting to get image and sha
-	// imageValueArr := strings.Split(url, "image=")
-	// shaValueArr := strings.Split(manifestList, "sha256:")
-
-	// return tagVersion, imageValueArr[1], shaValueArr[1]
 	tagVersion = repository + " " + tagVersion
 
 	return tagVersion, url, manifestList
@@ -149,6 +175,7 @@ func fetchDataGithub(gitUrl string) (gitTagVersion string, gitImage string, gitS
 	//Error handling
 	if errors != nil {
 		fmt.Println("Failed to retrieve the github values: ", errors)
+		log.Fatal("Failed to retrieve the redhat values: ", errors)
 		return "", "", "", ""
 	}
 
@@ -171,95 +198,15 @@ func fetchDataGithub(gitUrl string) (gitTagVersion string, gitImage string, gitS
 
 }
 
-func githubPush(contentAfterChanges string, githubAuth githubAuth) {
-
-	ctx := context.Background()
-
-	//Creating static token
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: githubAuth.githubToken})
-
-	//Passing the token and context for creating HTTP client
-	tc := oauth2.NewClient(ctx, ts)
-
-	// Create a GitHub client using the access token
-	client := github.NewClient(tc)
-
-	// Specification
-	owner := githubAuth.githubOwner
-	repo := githubAuth.githubRepo
-	branch := githubAuth.githubBranch
-	path := githubAuth.githubPath
-	newContent := contentAfterChanges
-	commitMessage := "Update new version"
-
-	//Fetching the content of the file specified in the path and storing in fileContent
-	fileContent, _, _, err := client.Repositories.GetContents(ctx, owner, repo, path, &github.RepositoryContentGetOptions{Ref: branch})
-	if err != nil {
-		log.Fatal(err)
-	}
-	sha := fileContent.GetSHA()
-
-	// Modifying the file by the new content
-	opts := &github.RepositoryContentFileOptions{
-		Message: &commitMessage,
-		Content: []byte(newContent),
-		SHA:     &sha,
-		Branch:  &branch,
-	}
-
-	// Update the file
-	_, _, err = client.Repositories.UpdateFile(context.Background(), owner, repo, path, opts)
-	if err != nil {
-		log.Fatal("Error updating file content:", err)
-	}
-
-	fmt.Println("File updated successfully!")
-
-}
-
-func githubPullRequest(contentAfterChanges string, githubAuth githubAuth) {
-
-	ctx := context.Background()
-
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: githubAuth.githubToken})
-
-	tc := oauth2.NewClient(ctx, ts)
-
-	client := github.NewClient(tc)
-
-	//Specifications
-	owner := githubAuth.githubOwner
-	repo := githubAuth.githubRepo
-	baseBranch := "main"
-	headBranch := githubAuth.githubBranch
-
-	//Crateing PR
-	pr, _, err := client.PullRequests.Create(ctx, owner, repo, &github.NewPullRequest{
-		Title:               github.String("Updation in version"),
-		Head:                github.String(headBranch),
-		Base:                github.String(baseBranch),
-		Body:                github.String("Updation in the version of tag, image and sha value"),
-		MaintainerCanModify: github.Bool(true),
-	})
-	if err != nil {
-		fmt.Println("Error creating pull request:", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Pull request created: %s\n", *pr.HTMLURL)
-}
-
 func main() {
 
-	redhatUrl := `https://catalog.redhat.com/software/containers/ubi9/ubi-micro/615bdf943f6014fa45ae1b58?architecture=amd64`
-	gitUrl := `https://github.com/WilsonRadadia20/my_CSM/blob/main/csm-main/config/csm-common.mk`
+	var config ConfigData
+	configFileData := readConfigYaml(config)
 
-	var githubAuth = githubAuth{"WilsonRadadia20", "my_CSM", "csm-main/config/csm-common.mk", "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", "User_branch_1"}
+	var githubAuth = L.GithubAuth{configFileData.AuthData.Owner, configFileData.AuthData.Repo, configFileData.AuthData.Path, configFileData.AuthData.Token, configFileData.AuthData.Branch}
 
-	tagVersion, imageValue, shaValue := fetchDataRedhat(redhatUrl)
-	gitTagVersion, gitImageValue, gitShaValue, gitFetchedData := fetchDataGithub(gitUrl)
+	tagVersion, imageValue, shaValue := fetchDataRedhat(configFileData.Urls.RedhatUrl)
+	gitTagVersion, gitImageValue, gitShaValue, gitFetchedData := fetchDataGithub(configFileData.Urls.GithubUrl)
 
 	redhatDataInstance := values{tagVersion, imageValue, shaValue}
 
@@ -276,9 +223,11 @@ func main() {
 	//Error handling if the data is not retrieved
 	if fetchedValuesInstance.redhatValues.tagVersion == "" || fetchedValuesInstance.redhatValues.image == "" || fetchedValuesInstance.redhatValues.digests == "" {
 		fmt.Println("Nothing Fetched!!!")
+		log.Fatal("Nothing Fetched!!!")
 		return
 	} else if fetchedValuesInstance.githubValues.fetchedData.tagVersion == "" || fetchedValuesInstance.githubValues.fetchedData.image == "" || fetchedValuesInstance.fetchedData.digests == "" {
 		fmt.Println("Nothing Fetched!!!")
+		log.Fatal("Nothing Fetched!!!")
 		return
 	}
 
@@ -297,17 +246,26 @@ func main() {
 
 	if comparisionResult {
 		fmt.Println("\nNothing to be changed")
+		log.Fatal("Nothing to be changed")
 	} else {
 
-		fmt.Println("\nThere is new update\n\n")
+		fmt.Println("\nThere is new update\n")
 		contentAfterChanges := updateContent(fetchedValuesInstance)
-		fmt.Println(contentAfterChanges)
+		// log.Fatal(contentAfterChanges)
+		// fmt.Println(contentAfterChanges + "\n")
+
+		githubAuth.GitVerifyBranch()
+
+		//Creating new branch in github
+		githubAuth.CreateGitBranch()
+
+		data := &L.ContentToChange{Content: contentAfterChanges}
 
 		//Git Push in branch
-		githubPush(contentAfterChanges, githubAuth)
+		githubAuth.GithubPush(data)
 
 		//Git PR
-		githubPullRequest(contentAfterChanges, githubAuth)
+		githubAuth.GithubPullRequest(data)
 	}
 
 }
