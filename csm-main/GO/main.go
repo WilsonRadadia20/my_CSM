@@ -1,11 +1,10 @@
 package main
 
 import (
-	L "GO/githubActions"
+	L "GO/githubutils"
 	"context"
-	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -55,7 +54,7 @@ type ConfigGithubAuth struct {
 	Branch string `yaml:"branch"`
 }
 
-func compareFetchedValues(fetchedValuesInstance fetchedValues) (comparisionResult bool) {
+func comparingFetchedValues(fetchedValuesInstance fetchedValues) (comparisionResult bool) {
 
 	//Trimming to exclude blank spaces
 	if strings.TrimSpace(fetchedValuesInstance.redhatValues.tagVersion) == strings.TrimSpace(fetchedValuesInstance.githubValues.fetchedData.tagVersion) && strings.TrimSpace(fetchedValuesInstance.redhatValues.image) == strings.TrimSpace(fetchedValuesInstance.githubValues.fetchedData.image) && strings.TrimSpace(fetchedValuesInstance.redhatValues.digests) == strings.TrimSpace(fetchedValuesInstance.githubValues.fetchedData.digests) {
@@ -84,28 +83,28 @@ func updateContent(fetchedValuesInstance fetchedValues) (newString string) {
 	return newString
 }
 
-func readConfigYaml(config ConfigData) ConfigData {
+func readConfigYaml() (error, ConfigData) {
+	var config ConfigData
 
 	//Reading file
-	yamlFile, err := ioutil.ReadFile("config/config.yaml")
+	yamlFile, err := os.ReadFile("config/config.yaml")
 
 	if err != nil {
-		fmt.Println("Error reading the yaml file", err)
-		log.Fatal("Error reading the yaml file", err)
+		return err, ConfigData{}
 	}
 
 	//Decoding data
 	//Unmarshal: First parameter is byte slice and second parameter is pointer to struct
 	errors := yaml.Unmarshal(yamlFile, &config)
 	if errors != nil {
-		fmt.Println("Error reading the yaml file", errors)
-		log.Fatal("Error reading the yaml file", errors)
+		return errors, ConfigData{}
 	}
-
-	return config
+	log.Println("Data fetched from Yaml file")
+	return nil, config
 }
 
-func fetchDataRedhat(redhatUrl string) (tagVersion string, imageValue string, shaValue string) {
+func fetchDataRedhat(redhatUrl string) (values, error) {
+
 	// Create a context with a timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -120,6 +119,7 @@ func fetchDataRedhat(redhatUrl string) (tagVersion string, imageValue string, sh
 	var url string
 	var manifestList string
 	var repository string
+	var tagVersion string
 
 	err := chromedp.Run(ctx,
 		//Navigating to the website
@@ -146,18 +146,20 @@ func fetchDataRedhat(redhatUrl string) (tagVersion string, imageValue string, sh
 
 	//Error handling
 	if err != nil {
-		fmt.Println("Failed to retrieve the redhat values: ", err)
-		log.Fatal("Failed to retrieve the redhat values: ", err)
-		return "", "", ""
+		return values{}, err
 	}
 
 	tagVersion = repository + " " + tagVersion
 
-	return tagVersion, url, manifestList
-
+	return values{tagVersion, url, manifestList}, nil
 }
 
-func fetchDataGithub(gitUrl string) (gitTagVersion string, gitImage string, gitShaValue string, gitFetchedData string) {
+func fetchDataGithub(gitUrl string) (values, string, error) {
+
+	var gitFetchedData string
+	var gitTagVersion string
+	var gitImage string
+	var gitShaValue string
 
 	// Create a context with a timeout
 	chromeInstance, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -174,9 +176,7 @@ func fetchDataGithub(gitUrl string) (gitTagVersion string, gitImage string, gitS
 
 	//Error handling
 	if errors != nil {
-		fmt.Println("Failed to retrieve the github values: ", errors)
-		log.Fatal("Failed to retrieve the redhat values: ", errors)
-		return "", "", "", ""
+		return values{}, "", errors
 	}
 
 	//Extracting tag version
@@ -194,78 +194,103 @@ func fetchDataGithub(gitUrl string) (gitTagVersion string, gitImage string, gitS
 	endIndexSha := strings.Index(gitFetchedData, "DEFAULT_GOIMAGE")
 	gitShaValue = gitFetchedData[startIndexSha+19 : endIndexSha-2] //+7 to exclude sha256:(7 char) and -2 to exclude _"(2 char)
 
-	return gitTagVersion, gitImage, gitShaValue, gitFetchedData
+	return values{gitTagVersion, gitImage, gitShaValue}, gitFetchedData, nil
 
 }
 
 func main() {
 
-	var config ConfigData
-	configFileData := readConfigYaml(config)
+	//reading YAML file
+	isYamlError, configFileData := readConfigYaml()
+	if isYamlError != nil {
+		log.Println("Error reading the yaml file", isYamlError)
+		return
+	}
 
-	var githubAuth = L.GithubAuth{configFileData.AuthData.Owner, configFileData.AuthData.Repo, configFileData.AuthData.Path, configFileData.AuthData.Token, configFileData.AuthData.Branch}
+	var githubAuth = L.GithubAuth{GithubOwner: configFileData.AuthData.Owner, GithubRepo: configFileData.AuthData.Repo, GithubPath: configFileData.AuthData.Path, GithubToken: configFileData.AuthData.Token, GithubBranch: configFileData.AuthData.Branch}
 
-	tagVersion, imageValue, shaValue := fetchDataRedhat(configFileData.Urls.RedhatUrl)
-	gitTagVersion, gitImageValue, gitShaValue, gitFetchedData := fetchDataGithub(configFileData.Urls.GithubUrl)
+	//Reading Redhat Data
+	redhatValuesInstance, isRedhatError := fetchDataRedhat(configFileData.Urls.RedhatUrl)
+	if isRedhatError != nil {
+		log.Println("Failed to retrieve the redhat values: ", isRedhatError)
+		return
+	}
 
-	redhatDataInstance := values{tagVersion, imageValue, shaValue}
+	//Reading Github Repo Data
+	githubDataInstance, gitFetchedData, isGithubError := fetchDataGithub(configFileData.Urls.GithubUrl)
+	if isGithubError != nil {
+		log.Println("Failed to retrieve the github values: ", isGithubError)
+		return
+	}
 
 	githubValuesInstance := githubValues{
-		fetchedData:       values{gitTagVersion, gitImageValue, gitShaValue},
+		fetchedData:       githubDataInstance,
 		githubFetchedData: gitFetchedData,
 	}
 
 	fetchedValuesInstance := fetchedValues{
 		githubValues: githubValuesInstance,
-		redhatValues: redhatDataInstance,
+		redhatValues: redhatValuesInstance,
 	}
 
 	//Error handling if the data is not retrieved
 	if fetchedValuesInstance.redhatValues.tagVersion == "" || fetchedValuesInstance.redhatValues.image == "" || fetchedValuesInstance.redhatValues.digests == "" {
-		fmt.Println("Nothing Fetched!!!")
-		log.Fatal("Nothing Fetched!!!")
+		log.Println("Nothing Fetched!!!")
 		return
 	} else if fetchedValuesInstance.githubValues.fetchedData.tagVersion == "" || fetchedValuesInstance.githubValues.fetchedData.image == "" || fetchedValuesInstance.fetchedData.digests == "" {
-		fmt.Println("Nothing Fetched!!!")
-		log.Fatal("Nothing Fetched!!!")
+		log.Println("Nothing Fetched!!!")
 		return
 	}
 
 	//Printing the retrieved data
-	fmt.Println("The data retrieved from Red Hat Catalog")
-	fmt.Println("The latest tag version is:", fetchedValuesInstance.redhatValues.tagVersion)
-	fmt.Println("The image value is:", fetchedValuesInstance.redhatValues.image)
-	fmt.Println("The sha value is:", fetchedValuesInstance.redhatValues.digests)
+	// log.Println("The data retrieved from Red Hat Catalog")
+	// log.Println("The latest tag version is:", fetchedValuesInstance.redhatValues.tagVersion)
+	// log.Println("The image value is:", fetchedValuesInstance.redhatValues.image)
+	// log.Println("The sha value is:", fetchedValuesInstance.redhatValues.digests)
 
-	fmt.Println("\nThe data retrieved from Github Repo")
-	fmt.Print("The latest tag version is: ", fetchedValuesInstance.githubValues.fetchedData.tagVersion)
-	fmt.Print("The image value is: ", fetchedValuesInstance.githubValues.fetchedData.image)
-	fmt.Print("The sha value is: ", fetchedValuesInstance.githubValues.fetchedData.digests)
+	// log.Println("\nThe data retrieved from Github Repo")
+	// log.Print("The latest tag version is: ", fetchedValuesInstance.githubValues.fetchedData.tagVersion)
+	// log.Print("The image value is: ", fetchedValuesInstance.githubValues.fetchedData.image)
+	// log.Print("The sha value is: ", fetchedValuesInstance.githubValues.fetchedData.digests)
 
-	comparisionResult := compareFetchedValues(fetchedValuesInstance)
+	log.Println("Red Hat Catalog data fetched")
+	log.Println("Github Repo data fetched")
 
-	if comparisionResult {
-		fmt.Println("\nNothing to be changed")
-		log.Fatal("Nothing to be changed")
+	//Comparining the Redhat and Github fetched values
+	isResultSame := comparingFetchedValues(fetchedValuesInstance)
+
+	if isResultSame {
+		log.Println("\nNothing to be changed")
 	} else {
 
-		fmt.Println("\nThere is new update\n")
+		log.Println("There is new update")
 		contentAfterChanges := updateContent(fetchedValuesInstance)
-		// log.Fatal(contentAfterChanges)
-		// fmt.Println(contentAfterChanges + "\n")
+		// log.Println(contentAfterChanges + "\n")
 
 		githubAuth.GitVerifyBranch()
 
 		//Creating new branch in github
-		githubAuth.CreateGitBranch()
+		isBranchError := githubAuth.CreateGitBranch()
+		if isBranchError != nil {
+			log.Println("Error creating branch", isBranchError)
+			return
+		}
 
 		data := &L.ContentToChange{Content: contentAfterChanges}
+		// log.Println(data)
 
-		//Git Push in branch
-		githubAuth.GithubPush(data)
+		// Git Push in branch
+		isPushError := githubAuth.GithubPush(data)
+		if isPushError != nil {
+			log.Println("Error updating file content", isPushError)
+			return
+		}
 
 		//Git PR
-		githubAuth.GithubPullRequest(data)
+		isPullError := githubAuth.GithubPullRequest(data)
+		if isPullError != nil {
+			log.Println("Error creating pull request:", isPullError)
+			return
+		}
 	}
-
 }

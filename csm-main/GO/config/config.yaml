@@ -5,6 +5,6 @@ urls:
 githubAuth:
   owner: WilsonRadadia20
   repo: my_CSM
-  token: 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
+  token: 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
   path: csm-main/config/csm-common.mk
   branch: User_branch_1
