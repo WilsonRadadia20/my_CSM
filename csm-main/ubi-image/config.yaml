@@ -8,7 +8,7 @@ comments:
 githubAuth:
   owner: WilsonRadadia20
   repo: my_CSM
-  token: xxxxxxxxxxxxxx
+  token: xxxxxxxxxxxxxxxxxxx
   path: csm-main/config/csm-common.mk
   branch: User_branch_1
 

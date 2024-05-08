@@ -3,7 +3,7 @@ package utils
 import (
 	"os"
 
-	"ubi-image/pkg/customlogs"
+	log "github.com/sirupsen/logrus"
 
 	"gopkg.in/yaml.v3"
 )
@@ -52,6 +52,6 @@ func ReadUtilConfigYaml(wordPtr *string) (ConfigData, error) {
 	if isUnmarshalError != nil {
 		return ConfigData{}, isUnmarshalError
 	}
-	customlogs.InfoLog.Println("Yaml file data fetched")
+	log.Infoln("Yaml file data fetched")
 	return config, nil
 }

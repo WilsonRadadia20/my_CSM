@@ -3,10 +3,11 @@ package automation
 import (
 	"fmt"
 	"strings"
-	"ubi-image/pkg/customlogs"
 	"ubi-image/pkg/github"
 	"ubi-image/pkg/redhat"
 	"ubi-image/pkg/utils"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type Values struct {
@@ -71,14 +72,14 @@ func AutomationProcess() error {
 	//Reading Redhat Data
 	RedhatValuesInstance, isRedhatError := redhat.FetchDataRedhat(configFileData.Urls.RedhatUrl)
 	if isRedhatError != nil {
-		customlogs.Errorlog.Println("Failed to retrieve the redhat values: ", isRedhatError)
+		log.Errorln("Failed to retrieve the redhat values: ", isRedhatError)
 		return isRedhatError
 	}
 
 	//Reading Github Repo Data
 	githubDataInstance, gitComment, gitFetchedData, isGithubError := github.FetchDataGithub(configFileData.Urls.GithubUrl)
 	if isGithubError != nil {
-		customlogs.Errorlog.Println("Failed to retrieve the github values: ", isGithubError)
+		log.Errorln("Failed to retrieve the github values: ", isGithubError)
 		return isGithubError
 	}
 
@@ -95,17 +96,17 @@ func AutomationProcess() error {
 
 	//Error handling if the data is not retrieved
 	if fetchedValuesInstance.RedhatValues.TagVersion == "" || fetchedValuesInstance.RedhatValues.Image == "" || fetchedValuesInstance.RedhatValues.Digests == "" {
-		customlogs.Errorlog.Println("Nothing Fetched!!!")
+		log.Errorln("Nothing Fetched!!!")
 		isNothing := fmt.Errorf("nothing fetched")
 		return isNothing
 	} else if fetchedValuesInstance.GithubValues.FetchedData.TagVersion == "" || fetchedValuesInstance.GithubValues.FetchedData.Image == "" || fetchedValuesInstance.FetchedData.Digests == "" {
-		customlogs.Errorlog.Println("Nothing Fetched!!!")
+		log.Errorln("Nothing Fetched!!!")
 		isNothing := fmt.Errorf("nothing fetched")
 		return isNothing
 	}
 
-	customlogs.InfoLog.Println("Red Hat Catalog data fetched")
-	customlogs.InfoLog.Println("Github Repo data fetched")
+	log.Infoln("Red Hat Catalog data fetched")
+	log.Infoln("Github Repo data fetched")
 
 	// return fetchedValuesInstance, nil
 
@@ -113,45 +114,45 @@ func AutomationProcess() error {
 	isResultSame := comparingFetchedValues(fetchedValuesInstance)
 
 	if isResultSame {
-		customlogs.InfoLog.Println("\nNothing to be changed")
-	} else {
+		log.Infoln("\nNothing to be changed")
+		return nil
+	}
 
-		customlogs.InfoLog.Println("There is new update")
-		contentAfterChanges := UpdateContent(fetchedValuesInstance, configFileData.Comments.Comment)
-		// log.Println(contentAfterChanges + "\n")
+	log.Infoln("There is new update")
+	contentAfterChanges := UpdateContent(fetchedValuesInstance, configFileData.Comments.Comment)
+	// log.Println(contentAfterChanges + "\n")
 
-		githubAuth.GitVerifyBranch()
+	githubAuth.GitVerifyBranch()
 
-		//Creating new branch in github
-		isBranchError := githubAuth.CreateGitBranch()
-		if isBranchError != nil {
-			customlogs.Errorlog.Println("Error creating branch", isBranchError)
-			return isBranchError
-		}
+	//Creating new branch in github
+	isBranchError := githubAuth.CreateGitBranch()
+	if isBranchError != nil {
+		log.Errorln("Error creating branch", isBranchError)
+		return isBranchError
+	}
 
-		data := &github.ContentToChange{Content: contentAfterChanges}
-		// log.Println(data)
+	data := &github.ContentToChange{Content: contentAfterChanges}
+	// log.Println(data)
 
-		// Git Push in branch
-		isPushError := githubAuth.GithubPush(data)
-		if isPushError != nil {
-			customlogs.Errorlog.Println("Error updating file content", isPushError)
-			return isPushError
-		}
+	// Git Push in branch
+	isPushError := githubAuth.GithubPush(data)
+	if isPushError != nil {
+		log.Errorln("Error updating file content", isPushError)
+		return isPushError
+	}
 
-		//Git PR
-		isPullError := githubAuth.GithubPullRequest(data, fetchedValuesInstance.RedhatValues.TagVersion)
-		if isPullError != nil {
-			customlogs.Errorlog.Println("Error creating pull request:", isPullError)
-			return isPullError
-		}
+	//Git PR
+	isPullError := githubAuth.GithubPullRequest(data, fetchedValuesInstance.RedhatValues.TagVersion)
+	if isPullError != nil {
+		log.Errorln("Error creating pull request:", isPullError)
+		return isPullError
+	}
 
-		//Add Reviewers
-		isAddReviwerError := githubAuth.GithubPrAddReviewers(configFileData.Reviewers.Reviewers)
-		if isAddReviwerError != nil {
-			customlogs.Errorlog.Println("Error adding reviewers to Pull request:", isAddReviwerError)
-			return isAddReviwerError
-		}
+	//Add Reviewers
+	isAddReviwerError := githubAuth.GithubPrAddReviewers(configFileData.Reviewers.Reviewers)
+	if isAddReviwerError != nil {
+		log.Errorln("Error adding reviewers to Pull request:", isAddReviwerError)
+		return isAddReviwerError
 	}
 
 	return nil

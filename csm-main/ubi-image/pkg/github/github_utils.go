@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"ubi-image/pkg/customlogs"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/google/go-github/v59/github"
 	"golang.org/x/oauth2"
@@ -60,12 +60,12 @@ func (githubAuth GithubAuth) GitVerifyBranch() {
 
 	_, _, err := client.Git.GetRef(ctx, githubAuth.GithubOwner, githubAuth.GithubRepo, "refs/heads/"+githubAuth.GithubBranch)
 	if err != nil {
-		customlogs.Errorlog.Println("The branch does not exist", err)
+		log.Errorln("The branch does not exist", err)
 	} else {
-		customlogs.InfoLog.Println("The branch exist, deleting the branch")
+		log.Infoln("The branch exist, deleting the branch")
 		_, errors := client.Git.DeleteRef(ctx, githubAuth.GithubOwner, githubAuth.GithubRepo, "refs/heads/"+githubAuth.GithubBranch)
 		if errors != nil {
-			customlogs.Errorlog.Println("The branch does not exist", errors)
+			log.Errorln("The branch does not exist", errors)
 		}
 	}
 }
@@ -89,7 +89,7 @@ func (githubAuth GithubAuth) CreateGitBranch() error {
 		return errors
 	}
 
-	customlogs.InfoLog.Println("New branch created successfully")
+	log.Infoln("New branch created successfully")
 
 	return nil
 }
@@ -121,7 +121,7 @@ func (githubAuth GithubAuth) GithubPush(data *ContentToChange) error {
 		return errors
 	}
 
-	customlogs.InfoLog.Println("File updated successfully")
+	log.Infoln("File updated successfully")
 
 	return nil
 }
@@ -147,9 +147,9 @@ func (githubAuth GithubAuth) GithubPullRequest(data *ContentToChange, tagVersion
 		return err
 	}
 
-	customlogs.InfoLog.Println("Pull request created successfully")
+	log.Infoln("Pull request created successfully")
 	prLink = *pr.HTMLURL
-	customlogs.InfoLog.Println("Pull request link:", *pr.HTMLURL)
+	log.Infoln("Pull request link:", *pr.HTMLURL)
 
 	return nil
 }
@@ -158,7 +158,7 @@ func (githubAuth GithubAuth) GithubPrAddReviewers(reviewersString string) error 
 
 	prNum, errLink := extractPRNumber(prLink)
 	if errLink != nil {
-		customlogs.Errorlog.Println("Error: ", errLink)
+		log.Errorln("Error: ", errLink)
 		return errLink
 	}
 
@@ -170,13 +170,13 @@ func (githubAuth GithubAuth) GithubPrAddReviewers(reviewersString string) error 
 	payloadByte, errMarshal := json.Marshal(payload)
 
 	if errMarshal != nil {
-		customlogs.Errorlog.Println("Error marshaling JSON:", errMarshal)
+		log.Errorln("Error marshaling JSON:", errMarshal)
 		return errMarshal
 	}
 
 	req, errRequest := http.NewRequest("POST", url, bytes.NewReader(payloadByte))
 	if errRequest != nil {
-		customlogs.Errorlog.Println("Error creating request: ", errRequest)
+		log.Errorln("Error creating request: ", errRequest)
 		return errRequest
 	}
 
@@ -188,25 +188,25 @@ func (githubAuth GithubAuth) GithubPrAddReviewers(reviewersString string) error 
 
 	resp, errResponse := client.Do(req)
 	if errResponse != nil {
-		customlogs.Errorlog.Println("Error sending request:", errResponse)
+		log.Errorln("Error sending request:", errResponse)
 		return errResponse
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusCreated {
-		customlogs.InfoLog.Println("Reviewers added successfully")
+		log.Infoln("Reviewers added successfully")
 
 	} else {
-		customlogs.Errorlog.Println("Error adding reviewer. Status code:", resp.StatusCode)
+		log.Errorln("Error adding reviewer. Status code:", resp.StatusCode)
 
 		responseBody, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			customlogs.Errorlog.Println("Error adding reviewers", err)
+			log.Errorln("Error adding reviewers", err)
 			return err
 		}
 
-		customlogs.InfoLog.Println("Response Body:", string(responseBody))
+		log.Infoln("Response Body:", string(responseBody))
 		return err
 	}
 

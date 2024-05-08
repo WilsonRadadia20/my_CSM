@@ -3,7 +3,8 @@ package main
 import (
 	"flag"
 	"ubi-image/pkg/automation"
-	"ubi-image/pkg/customlogs"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type ConfigData struct {
@@ -43,7 +44,7 @@ func main() {
 	//reading YAML file
 	isYamlError := automation.ReadConfigYaml(wordPtr) //from utils
 	if isYamlError != nil {
-		customlogs.Errorlog.Println("Error reading the yaml file", isYamlError)
+		log.Errorln("Error reading the yaml file", isYamlError)
 		return
 	}
 
