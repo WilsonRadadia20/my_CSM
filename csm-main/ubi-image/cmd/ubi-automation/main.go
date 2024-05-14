@@ -48,8 +48,9 @@ func main() {
 		return
 	}
 
-	isAutomationProcessError := automation.AutomationProcess()
-	if isAutomationProcessError != nil {
+	isProcessError := automation.Process()
+	if isProcessError != nil {
+		log.Errorln("Error in the automation process", isProcessError)
 		return
 	}
 

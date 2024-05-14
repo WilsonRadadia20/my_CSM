@@ -27,8 +27,7 @@ type FetchedValues struct {
 	RedhatValues redhat.Values
 }
 
-func comparingFetchedValues(fetchedValuesInstance FetchedValues) (comparisionResult bool) {
-
+func ComparingFetchedValues(fetchedValuesInstance FetchedValues) (comparisionResult bool) {
 	//Trimming to exclude blank spaces
 	if strings.TrimSpace(fetchedValuesInstance.RedhatValues.TagVersion) == strings.TrimSpace(fetchedValuesInstance.GithubValues.FetchedData.TagVersion) && strings.TrimSpace(fetchedValuesInstance.RedhatValues.Image) == strings.TrimSpace(fetchedValuesInstance.GithubValues.FetchedData.Image) && strings.TrimSpace(fetchedValuesInstance.RedhatValues.Digests) == strings.TrimSpace(fetchedValuesInstance.GithubValues.FetchedData.Digests) {
 		return true
@@ -67,7 +66,7 @@ func ReadConfigYaml(wordPtr *string) error {
 	return isYamlError
 }
 
-func AutomationProcess() error {
+func Process() error {
 
 	//Reading Redhat Data
 	RedhatValuesInstance, isRedhatError := redhat.FetchDataRedhat(configFileData.Urls.RedhatUrl)
@@ -108,10 +107,8 @@ func AutomationProcess() error {
 	log.Infoln("Red Hat Catalog data fetched")
 	log.Infoln("Github Repo data fetched")
 
-	// return fetchedValuesInstance, nil
-
 	//Comparining the Redhat and Github fetched values
-	isResultSame := comparingFetchedValues(fetchedValuesInstance)
+	isResultSame := ComparingFetchedValues(fetchedValuesInstance)
 
 	if isResultSame {
 		log.Infoln("\nNothing to be changed")
@@ -122,7 +119,11 @@ func AutomationProcess() error {
 	contentAfterChanges := UpdateContent(fetchedValuesInstance, configFileData.Comments.Comment)
 	// log.Println(contentAfterChanges + "\n")
 
-	githubAuth.GitVerifyBranch()
+	isBranchVerifyError := githubAuth.GitVerifyBranch()
+	if isBranchVerifyError != nil {
+		log.Errorln("Error verifying branch", isBranchVerifyError)
+		return isBranchVerifyError
+	}
 
 	//Creating new branch in github
 	isBranchError := githubAuth.CreateGitBranch()
