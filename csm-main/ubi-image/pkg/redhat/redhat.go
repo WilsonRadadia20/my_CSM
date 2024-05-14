@@ -13,25 +13,14 @@ type Values struct {
 	Digests    string
 }
 
-func FetchDataRedhat(redhatUrl string) (Values, error) {
-
-	// Create a context with a timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	//Initialize a controllable Chrome instance by using empty context
-	ctx, cancel = chromedp.NewContext(ctx)
-
-	//To release the browser resources when it is no longer needed[Scope]
-	defer cancel()
-
+func RedhatDataScrap(ctx context.Context, redhatUrl string) (string, string, string, error) {
 	//Scraping Logic
 	var url string
 	var manifestList string
 	var repository string
 	var tagVersion string
 
-	err := chromedp.Run(ctx,
+	isRedhatDataScrapError := chromedp.Run(ctx,
 		//Navigating to the website
 		chromedp.Navigate(redhatUrl),
 
@@ -54,12 +43,28 @@ func FetchDataRedhat(redhatUrl string) (Values, error) {
 		chromedp.Evaluate(`document.querySelectorAll("input.pf-c-form-control")[4].value;`, &manifestList),
 	)
 
-	//Error handling
-	if err != nil {
-		return Values{}, err
-	}
-
 	tagVersion = repository + " " + tagVersion
+
+	return tagVersion, url, manifestList, isRedhatDataScrapError
+}
+
+func FetchDataRedhat(redhatUrl string) (Values, error) {
+
+	// Create a context with a timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	//Initialize a controllable Chrome instance by using empty context
+	ctx, cancel = chromedp.NewContext(ctx)
+	//To release the browser resources when it is no longer needed[Scope]
+	defer cancel()
+
+	tagVersion, url, manifestList, isRedhatDataScrapError := RedhatDataScrap(ctx, redhatUrl)
+
+	//Error handling
+	if isRedhatDataScrapError != nil {
+		return Values{}, isRedhatDataScrapError
+	}
 
 	return Values{tagVersion, url, manifestList}, nil
 }

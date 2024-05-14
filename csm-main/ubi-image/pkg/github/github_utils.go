@@ -54,20 +54,22 @@ func extractPRNumber(prUrl string) (string, error) {
 	return prNumber, nil
 }
 
-func (githubAuth GithubAuth) GitVerifyBranch() {
+func (githubAuth GithubAuth) GitVerifyBranch() error {
 
 	ctx, client := initializeContext(githubAuth)
 
 	_, _, err := client.Git.GetRef(ctx, githubAuth.GithubOwner, githubAuth.GithubRepo, "refs/heads/"+githubAuth.GithubBranch)
 	if err != nil {
-		log.Errorln("The branch does not exist", err)
+		log.Infoln("The branch does not exist")
 	} else {
 		log.Infoln("The branch exist, deleting the branch")
 		_, errors := client.Git.DeleteRef(ctx, githubAuth.GithubOwner, githubAuth.GithubRepo, "refs/heads/"+githubAuth.GithubBranch)
 		if errors != nil {
 			log.Errorln("The branch does not exist", errors)
+			return errors
 		}
 	}
+	return nil
 }
 
 func (githubAuth GithubAuth) CreateGitBranch() error {
@@ -94,31 +96,44 @@ func (githubAuth GithubAuth) CreateGitBranch() error {
 	return nil
 }
 
-func (githubAuth GithubAuth) GithubPush(data *ContentToChange) error {
-
-	ctx, client := initializeContext(githubAuth)
-
+func CreateUpdatedFile(ctx context.Context, client *github.Client, githubAuth GithubAuth, data *ContentToChange) (*github.RepositoryContentFileOptions, error) {
 	//Fetching the content of the file specified in the path and storing in fileContent
+	var opts *github.RepositoryContentFileOptions
+
 	fileContent, _, _, err := client.Repositories.GetContents(ctx, githubAuth.GithubOwner, githubAuth.GithubRepo, githubAuth.GithubPath, &github.RepositoryContentGetOptions{Ref: githubAuth.GithubBranch})
 	if err != nil {
-		return err
+		return opts, err
 	}
 	sha := fileContent.GetSHA()
 
-	commitMessage := "Update new version"
+	commitMessage := "Update new version of ubi-image"
 
 	// Modifying the file by the new content
-	opts := &github.RepositoryContentFileOptions{
+	opts = &github.RepositoryContentFileOptions{
 		Message: &commitMessage,
 		Content: []byte(data.Content),
 		SHA:     &sha,
 		Branch:  &githubAuth.GithubBranch,
 	}
 
+	return opts, nil
+}
+
+func (githubAuth GithubAuth) GithubPush(data *ContentToChange) error {
+
+	ctx, client := initializeContext(githubAuth)
+
+	opts, isCreateUpdatedFileError := CreateUpdatedFile(ctx, client, githubAuth, data)
+	if isCreateUpdatedFileError != nil {
+		log.Errorln("Error in creating updated file", isCreateUpdatedFileError)
+		return isCreateUpdatedFileError
+	}
+
 	// Update the file
-	_, _, errors := client.Repositories.UpdateFile(context.Background(), githubAuth.GithubOwner, githubAuth.GithubRepo, githubAuth.GithubPath, opts)
-	if errors != nil {
-		return errors
+	_, _, isUpdateFileError := client.Repositories.UpdateFile(context.Background(), githubAuth.GithubOwner, githubAuth.GithubRepo, githubAuth.GithubPath, opts)
+	if isUpdateFileError != nil {
+		log.Errorln("Error in updating file", isCreateUpdatedFileError)
+		return isUpdateFileError
 	}
 
 	log.Infoln("File updated successfully")
@@ -126,30 +141,37 @@ func (githubAuth GithubAuth) GithubPush(data *ContentToChange) error {
 	return nil
 }
 
-func (githubAuth GithubAuth) GithubPullRequest(data *ContentToChange, tagVersion string) error {
-
-	ctx, client := initializeContext(githubAuth)
-
+func CreatePullRequest(tagVersion string, ctx context.Context, client *github.Client, githubAuth GithubAuth) (pr *github.PullRequest, err error) {
 	baseBranch := "main"
 	headBranch := githubAuth.GithubBranch
 
 	subject := tagVersion + " " + "version update"
 
-	//Crateing PR
-	pr, _, err := client.PullRequests.Create(ctx, githubAuth.GithubOwner, githubAuth.GithubRepo, &github.NewPullRequest{
+	//Creating PR
+	pr, _, err = client.PullRequests.Create(ctx, githubAuth.GithubOwner, githubAuth.GithubRepo, &github.NewPullRequest{
 		Title:               github.String(subject),
 		Head:                github.String(headBranch),
 		Base:                github.String(baseBranch),
 		Body:                github.String("Updation in the version of tag, image and sha value"),
 		MaintainerCanModify: github.Bool(true),
 	})
-	if err != nil {
-		return err
+
+	return pr, err
+}
+
+func (githubAuth GithubAuth) GithubPullRequest(data *ContentToChange, tagVersion string) error {
+
+	ctx, client := initializeContext(githubAuth)
+
+	pr, isCreatePullRequestError := CreatePullRequest(tagVersion, ctx, client, githubAuth)
+	if isCreatePullRequestError != nil {
+		log.Errorln("Creating Pull Request Failed", isCreatePullRequestError)
+		return isCreatePullRequestError
 	}
 
 	log.Infoln("Pull request created successfully")
 	prLink = *pr.HTMLURL
-	log.Infoln("Pull request link:", *pr.HTMLURL)
+	log.Infoln("Pull request link:", prLink)
 
 	return nil
 }
